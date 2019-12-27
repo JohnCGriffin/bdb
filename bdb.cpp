@@ -28,6 +28,18 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
+struct DirSize {
+    std::string fullpath;
+    size_t size;
+};
+
+static std::vector<DirSize> summary;
+
+void add_dir_size(std::string full_path, size_t size){
+    static std::mutex m;
+    std::lock_guard<std::mutex> guard(m);
+    summary.push_back({ full_path, size });
+}
 
 size_t traverse_directory(const std::string dir,
 			  const dev_t device,
@@ -73,6 +85,7 @@ size_t traverse_directory(const std::string dir,
     return result;
 }
 
+/*
 void print_directory_summary(std::string dir, size_t bytes)
 {
     static std::mutex print_mutex;
@@ -80,6 +93,7 @@ void print_directory_summary(std::string dir, size_t bytes)
     auto gigs = 1.0 * bytes / (1024 * 1024 * 1024);
     std::cout << dir << " " << std::fixed << std::setprecision(1) << gigs << "\n";
 }
+*/
 
 size_t disk_consumption(std::string dir, const dev_t device)
 {
@@ -88,7 +102,7 @@ size_t disk_consumption(std::string dir, const dev_t device)
     const auto result = traverse_directory(dir, device, disk_consumption);
 
     if(SMALLEST_PRINTABLE < result){
-	print_directory_summary(dir, result);
+	add_dir_size(dir,result);
     }
 
     return result;
@@ -146,7 +160,23 @@ void top_level(std::string dir, const int threads)
 	size += f.get();
     }
 
-    print_directory_summary(dir, size);
+    add_dir_size(dir, size);
+}
+
+std::string parent(std::string fullpath)
+{
+    auto slash = fullpath.rfind('/');
+    return slash == std::string::npos ? "" : fullpath.substr(0,slash);
+}
+
+void display_results()
+{
+    std::sort(summary.begin(), summary.end(),
+	      [](DirSize&a, DirSize& b){ return a.size > b.size; });
+    for(auto ds : summary){
+	auto gigs = 1.0 * ds.size / (1024 * 1024 * 1024);
+	std::cout << ds.fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
+    }
 }
 
 int main(int argc, char** argv)
@@ -161,6 +191,7 @@ int main(int argc, char** argv)
 	}
 	auto top_dir(argc >= 2 ? argv[1] : ".");
 	top_level(top_dir, threads);
+	display_results();
 	return 0;
 
     } catch(std::exception& e){
