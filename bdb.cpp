@@ -14,7 +14,7 @@
 
  options: 
     -threads N  (number of threads, default 4)
-    -size N (minimum GB of interest, default 4)
+    -size N (minimum GB of interest, default 1)
 
 ***************************************************/
 
@@ -34,7 +34,7 @@
 const size_t GB = 1024 * 1024 * 1024;
 
 static int threads = 4;
-static size_t smallest_reportable_size = 4 * GB;
+static size_t smallest_reportable_size = 1 * GB;
 
 struct DirSize {
     std::string fullpath;
