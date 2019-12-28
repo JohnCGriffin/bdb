@@ -1,22 +1,19 @@
 
-/*************************************************
+/*********************************************************************
 
  bdb - big disk branches on Linux/Mac
  
- Report back list of large directories with
- size larger than 4G. 
+ Report back list of large directories with size larger than 4G.
 
- Note that this purposely does not cross file
- systems, so using 'bdb /' will report on the
- root file system, not everything under its
- directory structure.  Likewise, it purposely
- avoids symlinks.
+ Note that this purposely does not cross file systems, so using 
+ 'bdb /' will report on the root file system, not everything under its
+ directory structure.  Likewise, bdb purposely avoids symlinks.
 
  options: 
     -threads N  (number of threads, default 4)
     -size N (minimum GB of interest, default 1)
 
-***************************************************/
+**********************************************************************/
 
 #include <iostream>
 #include <vector>
@@ -26,7 +23,6 @@
 #include <mutex>
 #include <queue>
 #include <cstring>
-#include <stdexcept>
 
 #include <sys/stat.h>
 #include <dirent.h>
