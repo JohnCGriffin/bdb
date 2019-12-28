@@ -131,10 +131,10 @@ static void top_level(std::string dir)
     }
     struct stat buf;
     if(stat(dir.c_str(),&buf)){
-	throw new std::runtime_error("cannot stat directory: " + dir);
+	throw std::runtime_error("cannot stat directory: " + dir);
     }
     if((buf.st_mode & S_IFMT) != S_IFDIR){
-	throw new std::runtime_error(dir + " is not a directory");
+	throw std::runtime_error(dir + " is not a directory");
     }
 
     std::queue<std::string> q;
