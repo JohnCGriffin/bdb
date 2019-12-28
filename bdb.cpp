@@ -27,6 +27,8 @@
 #include <sys/stat.h>
 #include <dirent.h>
 
+
+
 const size_t GB = 1024 * 1024 * 1024;
 
 static int threads = 4;
@@ -39,15 +41,16 @@ struct DirSize {
 
 static std::vector<DirSize> summary;
 
-static void add_dir_size(std::string full_path, size_t size){
+static void add_dir_size(std::string full_path, const size_t size){
     static std::mutex m;
     std::lock_guard<std::mutex> guard(m);
     summary.push_back({ full_path, size });
 }
 
-static size_t traverse_directory(const std::string dir,
-			  const dev_t device,
-			  const std::function<size_t(std::string,dev_t)> f)
+static size_t
+traverse_directory(const std::string dir,
+		   const dev_t device,
+		   const std::function<size_t(std::string,dev_t)> f)
 {
     size_t result = 0;
 
@@ -112,7 +115,7 @@ static bool remove(std::queue<std::string>* q, std::string& receiver)
     return true;
 }
 
-static size_t worker(std::queue<std::string>* q, dev_t device)
+static size_t worker(std::queue<std::string>* q, const dev_t device)
 {
     size_t result = 0;
     for(std::string dir;remove(q,dir);){
