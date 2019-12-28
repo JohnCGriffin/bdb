@@ -1,10 +1,10 @@
 
-/*********************************************
+/*************************************************
 
  bdb - big disk branches on Linux/Mac
  
  Report back list of large directories with
- size larger than 1G. 
+ size larger than 4G. 
 
  Note that this purposely does not cross file
  systems, so using 'bdb /' will report on the
@@ -12,9 +12,11 @@
  directory structure.  Likewise, it purposely
  avoids symlinks.
 
- options: -t N  (number of threads, default 4)
+ options: 
+    -threads N  (number of threads, default 4)
+    -size N (minimum GB of interest, default 4)
 
-**********************************************/
+***************************************************/
 
 #include <iostream>
 #include <vector>
@@ -24,9 +26,15 @@
 #include <mutex>
 #include <queue>
 #include <cstring>
+#include <stdexcept>
 
 #include <sys/stat.h>
 #include <dirent.h>
+
+const size_t GB = 1024 * 1024 * 1024;
+
+static int threads = 4;
+static size_t smallest_reportable_size = 4 * GB;
 
 struct DirSize {
     std::string fullpath;
@@ -35,13 +43,13 @@ struct DirSize {
 
 static std::vector<DirSize> summary;
 
-void add_dir_size(std::string full_path, size_t size){
+static void add_dir_size(std::string full_path, size_t size){
     static std::mutex m;
     std::lock_guard<std::mutex> guard(m);
     summary.push_back({ full_path, size });
 }
 
-size_t traverse_directory(const std::string dir,
+static size_t traverse_directory(const std::string dir,
 			  const dev_t device,
 			  const std::function<size_t(std::string,dev_t)> f)
 {
@@ -85,30 +93,18 @@ size_t traverse_directory(const std::string dir,
     return result;
 }
 
-/*
-void print_directory_summary(std::string dir, size_t bytes)
+static size_t disk_consumption(std::string dir, const dev_t device)
 {
-    static std::mutex print_mutex;
-    std::lock_guard<std::mutex> guard(print_mutex);
-    auto gigs = 1.0 * bytes / (1024 * 1024 * 1024);
-    std::cout << dir << " " << std::fixed << std::setprecision(1) << gigs << "\n";
-}
-*/
-
-size_t disk_consumption(std::string dir, const dev_t device)
-{
-    const size_t SMALLEST_PRINTABLE = 1024 * 1024 * 1024;
-
     const auto result = traverse_directory(dir, device, disk_consumption);
 
-    if(SMALLEST_PRINTABLE < result){
+    if(smallest_reportable_size < result){
 	add_dir_size(dir,result);
     }
 
     return result;
 }
 
-bool remove(std::queue<std::string>* q, std::string& receiver)
+static bool remove(std::queue<std::string>* q, std::string& receiver)
 {
     static std::mutex m;
     std::lock_guard<std::mutex> guard(m);
@@ -120,7 +116,7 @@ bool remove(std::queue<std::string>* q, std::string& receiver)
     return true;
 }
 
-size_t worker(std::queue<std::string>* q, dev_t device)
+static size_t worker(std::queue<std::string>* q, dev_t device)
 {
     size_t result = 0;
     for(std::string dir;remove(q,dir);){
@@ -129,7 +125,7 @@ size_t worker(std::queue<std::string>* q, dev_t device)
     return result;
 }
 
-void top_level(std::string dir, const int threads)
+static void top_level(std::string dir)
 {
     if(dir.size() > 1 && dir.back() == '/'){
 	dir = dir.substr(0,dir.size()-1);
@@ -163,18 +159,12 @@ void top_level(std::string dir, const int threads)
     add_dir_size(dir, size);
 }
 
-std::string parent(std::string fullpath)
-{
-    auto slash = fullpath.rfind('/');
-    return slash == std::string::npos ? "" : fullpath.substr(0,slash);
-}
-
-void display_results()
+static void display_results()
 {
     std::sort(summary.begin(), summary.end(),
 	      [](DirSize&a, DirSize& b){ return a.size > b.size; });
     for(auto ds : summary){
-	auto gigs = 1.0 * ds.size / (1024 * 1024 * 1024);
+	auto gigs = 1.0 * ds.size / GB;
 	std::cout << ds.fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
     }
 }
@@ -183,14 +173,21 @@ int main(int argc, char** argv)
 {
     try {
 
-	auto threads = 4;
-	if (argc > 2 && strcmp("-t",argv[1]) == 0){
-	    threads = atoi(argv[2]);
-	    argc -= 2;
+	while(argc > 2 && argv[1][0] == '-'){
+	    std::string option(argv[1]);
+	    if(option == "-threads"){
+		threads = std::stoi(argv[2]);
+	    } else if(option == "-size"){
+		smallest_reportable_size = size_t(std::stoi(argv[2])) * GB;
+	    } else {
+		throw std::runtime_error("unknown option: " + option);
+	    }
 	    argv += 2;
+	    argc -= 2;
 	}
+
 	auto top_dir(argc >= 2 ? argv[1] : ".");
-	top_level(top_dir, threads);
+	top_level(top_dir);
 	display_results();
 	return 0;
 
