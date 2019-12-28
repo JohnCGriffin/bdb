@@ -178,7 +178,7 @@ int main(int argc, char** argv)
 	    if(option == "-threads"){
 		threads = std::stoi(argv[2]);
 	    } else if(option == "-size"){
-		smallest_reportable_size = size_t(std::stoi(argv[2])) * GB;
+		smallest_reportable_size = std::stoi(argv[2]) * GB;
 	    } else {
 		throw std::runtime_error("unknown option: " + option);
 	    }
