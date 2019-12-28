@@ -23,10 +23,10 @@
 #include <mutex>
 #include <queue>
 #include <cstring>
+#include <algorithm>
 
 #include <sys/stat.h>
 #include <dirent.h>
-
 
 
 const size_t GB = 1024 * 1024 * 1024;
@@ -161,7 +161,10 @@ static void top_level(std::string dir)
 static void display_results()
 {
     std::sort(summary.begin(), summary.end(),
-	      [](DirSize&a, DirSize& b){ return a.size > b.size; });
+	      [](const DirSize&a, const DirSize& b) -> bool {
+		  return a.size > b.size;
+	      });
+
     for(auto ds : summary){
 	auto gigs = 1.0 * ds.size / GB;
 	std::cout << ds.fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
