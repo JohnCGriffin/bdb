@@ -34,25 +34,22 @@ const size_t GB = 1024 * 1024 * 1024;
 static int threads = 4;
 static size_t smallest_reportable_size = 1 * GB;
 
-struct DirSize {
+struct NodeSummary;
+using NodeSummaryPtr = std::shared_ptr<NodeSummary>;
+
+struct NodeSummary {
     std::string fullpath;
     size_t size;
+    std::vector<NodeSummaryPtr> children;
 };
 
-static std::vector<DirSize> summary;
-
-static void add_dir_size(std::string full_path, const size_t size){
-    static std::mutex m;
-    std::lock_guard<std::mutex> guard(m);
-    summary.push_back({ full_path, size });
-}
-
-static size_t
+static NodeSummaryPtr
 traverse_directory(const std::string dir,
 		   const dev_t device,
-		   const std::function<size_t(std::string,dev_t)> f)
+		   const std::function<NodeSummaryPtr(std::string,dev_t)> f)
 {
-    size_t result = 0;
+    auto result = std::make_shared<NodeSummary>();
+    result->fullpath = dir;
 
     auto dirp = opendir(dir.c_str());
 
@@ -77,11 +74,16 @@ traverse_directory(const std::string dir,
 
 	    if(entry->d_type == DT_DIR){
 
-		result += f(path,device);
+	        auto child = f(path,device);
+		result->size += child->size;
+
+		if (child->size >= GB) {
+		    result->children.push_back(child);
+		}
 
 	    } else if(entry->d_type == DT_REG){
 	
-		result += buf.st_blocks * 512; // man 2 stat
+		result->size += buf.st_blocks * 512; // man 2 stat
 	    }
 
 	}
@@ -92,15 +94,9 @@ traverse_directory(const std::string dir,
     return result;
 }
 
-static size_t disk_consumption(std::string dir, const dev_t device)
+static NodeSummaryPtr disk_consumption(std::string dir, const dev_t device)
 {
-    const auto result = traverse_directory(dir, device, disk_consumption);
-
-    if(smallest_reportable_size < result){
-	add_dir_size(dir,result);
-    }
-
-    return result;
+    return traverse_directory(dir, device, disk_consumption);
 }
 
 static bool remove(std::queue<std::string>* q, std::string& receiver)
@@ -115,16 +111,18 @@ static bool remove(std::queue<std::string>* q, std::string& receiver)
     return true;
 }
 
-static size_t worker(std::queue<std::string>* q, const dev_t device)
+static NodeSummaryPtr worker(std::queue<std::string>* q, const dev_t device)
 {
-    size_t result = 0;
+    auto result = std::make_shared<NodeSummary>();
     for(std::string dir;remove(q,dir);){
-	result += disk_consumption(dir, device);
+	auto child = disk_consumption(dir, device);
+	result->size += child->size;
+	result->children.push_back(child);
     }
     return result;
 }
 
-static void top_level(std::string dir)
+static NodeSummaryPtr top_level(std::string dir)
 {
     if(dir.size() > 1 && dir.back() == '/'){
 	dir = dir.substr(0,dir.size()-1);
@@ -139,35 +137,45 @@ static void top_level(std::string dir)
 
     std::queue<std::string> q;
 
-    auto q_pusher = [&](std::string sub,dev_t) { q.push(sub); return 0; };
+    auto q_pusher = [&](std::string sub,dev_t) -> NodeSummaryPtr {
+			q.push(sub);
+			return std::make_shared<NodeSummary>();
+		    };
     
     const dev_t device = buf.st_dev;
 
-    auto size = traverse_directory(dir, device, q_pusher);
+    auto result = traverse_directory(dir, device, q_pusher);
 
-    std::vector<std::future<size_t>> futures;
+    std::vector<std::future<NodeSummaryPtr>> futures;
 
     for(int i=0; i<threads; i++){
 	futures.emplace_back(std::async(std::launch::async,worker,&q,device));
     }
 
     for(auto& f : futures){
-	size += f.get();
+	auto child = f.get();
+	result->size += child->size;
+	result->children.push_back(child);
     }
 
-    add_dir_size(dir, size);
+    return result;
 }
 
-static void display_results()
+static void display_results(NodeSummaryPtr node, bool elision)
 {
-    std::sort(summary.begin(), summary.end(),
-	      [](const DirSize&a, const DirSize& b) -> bool {
-		  return a.size > b.size;
+    std::sort(node->children.begin(), node->children.end(),
+	      [](const NodeSummaryPtr&a, const NodeSummaryPtr& b) -> bool {
+		  return a->size > b->size;
 	      });
-
-    for(auto ds : summary){
-	auto gigs = 1.0 * ds.size / GB;
-	std::cout << ds.fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
+    if(node->size > GB){
+	if(node->fullpath.size()){
+	    auto gigs = 1.0 * node->size / GB;
+	    std::cout << node->fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
+	}
+	    for (auto child : node->children){
+		display_results(child, elision);
+	    }
+	
     }
 }
 
@@ -175,12 +183,19 @@ int main(int argc, char** argv)
 {
     try {
 
+	bool elided = true;
+
 	while(argc > 2 && argv[1][0] == '-'){
 	    std::string option(argv[1]);
 	    if(option == "-threads"){
 		threads = std::stoi(argv[2]);
 	    } else if(option == "-size"){
 		smallest_reportable_size = std::stoi(argv[2]) * GB;
+	    } else if(option == "-no-elision"){
+		elided = false;
+		argc--;
+		argv++;
+		continue;
 	    } else {
 		throw std::runtime_error("unknown option: " + option);
 	    }
@@ -189,8 +204,7 @@ int main(int argc, char** argv)
 	}
 
 	auto top_dir(argc >= 2 ? argv[1] : ".");
-	top_level(top_dir);
-	display_results();
+	display_results(top_level(top_dir), elided);
 	return 0;
 
     } catch(std::exception& e){
