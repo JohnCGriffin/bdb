@@ -15,7 +15,7 @@
 
 **********************************************************************/
 
-#include <iostream>
+#include <cstdio>
 #include <vector>
 #include <exception>
 #include <iomanip>
@@ -30,9 +30,6 @@
 
 
 const size_t GB = 1024 * 1024 * 1024;
-
-static int threads = 4;
-static size_t smallest_reportable_size = 1 * GB;
 
 struct Node;
 using NodePtr = std::shared_ptr<Node>;
@@ -122,7 +119,7 @@ static NodePtr worker(std::queue<std::string>* q, const dev_t device)
     return result;
 }
 
-static NodePtr top_level(std::string dir)
+static NodePtr top_level(std::string dir, const int threads)
 {
     if(dir.size() > 1 && dir.back() == '/'){
 	dir = dir.substr(0,dir.size()-1);
@@ -163,27 +160,29 @@ static NodePtr top_level(std::string dir)
     return result;
 }
 
-static void display_results(NodePtr node, bool elision)
+static void display_results(NodePtr node,
+			    const size_t reportable_size,
+			    const bool elision)
 {
     std::sort(node->children.begin(), node->children.end(),
 	      [](const NodePtr&a, const NodePtr& b) -> bool {
 		  return a->size > b->size;
 	      });
     
-    if(node->size > GB){
+    if(node->size > reportable_size){
 
 	auto gigs = 1.0 * node->size / GB;
-	std::cout << node->fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
+	::printf("%s %.1f\n", node->fullpath.c_str(), gigs);
 
 	if(elision && node->children.size() == 1){
 	    while(node->children.size() == 1){
 		node = node->children.at(0);
 	    }
-	    display_results(node, elision);
+	    display_results(node, reportable_size, elision);
 	    
 	} else {
 	    for (auto child : node->children){
-		display_results(child, elision);
+		display_results(child, reportable_size, elision);
 	    }
 	}
     }
@@ -191,6 +190,9 @@ static void display_results(NodePtr node, bool elision)
 
 int main(int argc, char** argv)
 {
+    int threads = 4;
+    size_t reportable_size = 1 * GB;
+
     try {
 
 	bool elided = true;
@@ -200,7 +202,7 @@ int main(int argc, char** argv)
 	    if(option == "-threads"){
 		threads = std::stoi(argv[2]);
 	    } else if(option == "-size"){
-		smallest_reportable_size = std::stoi(argv[2]) * GB;
+		reportable_size = std::stoi(argv[2]) * GB;
 	    } else if(option == "-no-elision"){
 		elided = false;
 		argc--;
@@ -213,12 +215,13 @@ int main(int argc, char** argv)
 	    argc -= 2;
 	}
 
-	auto top_dir(argc >= 2 ? argv[1] : ".");
-	display_results(top_level(top_dir), elided);
+	display_results(top_level(argv[1], threads),
+			reportable_size,
+			elided);
 	return 0;
 
     } catch(std::exception& e){
-	std::cerr << e.what() << "\n";
+	::fprintf(stderr, "%s\n", e.what());
 	return 1;
     }
 }
