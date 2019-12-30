@@ -172,10 +172,16 @@ static void display_results(NodeSummaryPtr node, bool elision)
 	    auto gigs = 1.0 * node->size / GB;
 	    std::cout << node->fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
 	}
+	if(elision && node->children.size() == 1){
+	    while(node->children.size() == 1){
+		node = node->children.at(0);
+	    }
+	    display_results(node, elision);
+	} else {
 	    for (auto child : node->children){
 		display_results(child, elision);
 	    }
-	
+	}
     }
 }
 
