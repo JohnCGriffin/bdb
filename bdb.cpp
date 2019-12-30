@@ -34,21 +34,21 @@ const size_t GB = 1024 * 1024 * 1024;
 static int threads = 4;
 static size_t smallest_reportable_size = 1 * GB;
 
-struct NodeSummary;
-using NodeSummaryPtr = std::shared_ptr<NodeSummary>;
+struct Node;
+using NodePtr = std::shared_ptr<Node>;
 
-struct NodeSummary {
+struct Node {
     std::string fullpath;
     size_t size;
-    std::vector<NodeSummaryPtr> children;
+    std::vector<NodePtr> children;
 };
 
-static NodeSummaryPtr
+static NodePtr
 traverse_directory(const std::string dir,
 		   const dev_t device,
-		   const std::function<NodeSummaryPtr(std::string,dev_t)> f)
+		   const std::function<NodePtr(std::string,dev_t)> f)
 {
-    auto result = std::make_shared<NodeSummary>();
+    auto result = std::make_shared<Node>();
     result->fullpath = dir;
 
     auto dirp = opendir(dir.c_str());
@@ -94,7 +94,7 @@ traverse_directory(const std::string dir,
     return result;
 }
 
-static NodeSummaryPtr disk_consumption(std::string dir, const dev_t device)
+static NodePtr disk_consumption(std::string dir, const dev_t device)
 {
     return traverse_directory(dir, device, disk_consumption);
 }
@@ -111,9 +111,9 @@ static bool remove(std::queue<std::string>* q, std::string& receiver)
     return true;
 }
 
-static NodeSummaryPtr worker(std::queue<std::string>* q, const dev_t device)
+static NodePtr worker(std::queue<std::string>* q, const dev_t device)
 {
-    auto result = std::make_shared<NodeSummary>();
+    auto result = std::make_shared<Node>();
     for(std::string dir;remove(q,dir);){
 	auto child = disk_consumption(dir, device);
 	result->size += child->size;
@@ -122,7 +122,7 @@ static NodeSummaryPtr worker(std::queue<std::string>* q, const dev_t device)
     return result;
 }
 
-static NodeSummaryPtr top_level(std::string dir)
+static NodePtr top_level(std::string dir)
 {
     if(dir.size() > 1 && dir.back() == '/'){
 	dir = dir.substr(0,dir.size()-1);
@@ -137,16 +137,16 @@ static NodeSummaryPtr top_level(std::string dir)
 
     std::queue<std::string> q;
 
-    auto q_pusher = [&](std::string sub,dev_t) -> NodeSummaryPtr {
+    auto q_pusher = [&](std::string sub,dev_t) -> NodePtr {
 			q.push(sub);
-			return std::make_shared<NodeSummary>();
+			return std::make_shared<Node>();
 		    };
     
     const dev_t device = buf.st_dev;
 
     auto result = traverse_directory(dir, device, q_pusher);
 
-    std::vector<std::future<NodeSummaryPtr>> futures;
+    std::vector<std::future<NodePtr>> futures;
 
     for(int i=0; i<threads; i++){
 	futures.emplace_back(std::async(std::launch::async,worker,&q,device));
@@ -163,10 +163,10 @@ static NodeSummaryPtr top_level(std::string dir)
     return result;
 }
 
-static void display_results(NodeSummaryPtr node, bool elision)
+static void display_results(NodePtr node, bool elision)
 {
     std::sort(node->children.begin(), node->children.end(),
-	      [](const NodeSummaryPtr&a, const NodeSummaryPtr& b) -> bool {
+	      [](const NodePtr&a, const NodePtr& b) -> bool {
 		  return a->size > b->size;
 	      });
     
