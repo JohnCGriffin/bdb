@@ -153,9 +153,11 @@ static NodeSummaryPtr top_level(std::string dir)
     }
 
     for(auto& f : futures){
-	auto child = f.get();
-	result->size += child->size;
-	result->children.push_back(child);
+	auto job = f.get();
+	for (auto child : job->children){
+	    result->size += child->size;
+	    result->children.push_back(child);
+	}
     }
 
     return result;
@@ -167,16 +169,18 @@ static void display_results(NodeSummaryPtr node, bool elision)
 	      [](const NodeSummaryPtr&a, const NodeSummaryPtr& b) -> bool {
 		  return a->size > b->size;
 	      });
+    
     if(node->size > GB){
-	if(node->fullpath.size()){
-	    auto gigs = 1.0 * node->size / GB;
-	    std::cout << node->fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
-	}
+
+	auto gigs = 1.0 * node->size / GB;
+	std::cout << node->fullpath << " " << std::fixed << std::setprecision(1) << gigs << "\n";
+
 	if(elision && node->children.size() == 1){
 	    while(node->children.size() == 1){
 		node = node->children.at(0);
 	    }
 	    display_results(node, elision);
+	    
 	} else {
 	    for (auto child : node->children){
 		display_results(child, elision);
