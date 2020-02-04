@@ -1,15 +1,13 @@
 
-CXX=g++
-CXXFLAGS=-O3 -Wextra -pthread --std=c++11
+bdb: main.go
+	go build -o $@
 
-bdb: bdb.o 
-	g++ $(CXXFLAGS) $? -o $@
+bdb-linux: main.go
+	GOOS=linux go build -o $@
 
 example: bdb
 	./bdb ~
 
 clean:
-	rm -f bdb *.o tags
+	rm -f bdb bdb-linux *.o tags
 
-tags:
-	ctags *.cpp
